@@ -18,7 +18,11 @@ This project allows you to connect your Nomi to WhatsApp. By utilizing the Nomi 
 
 ## Features
 
-`TODO`
+- **Text Messages**: Receive and send text messages from/to your nomi through WhatsApp.
+- **Audio Transcription**: Transcribe audio messages using OpenAI's Whisper model and send the transcriptions to your nomi.
+  - Audio transcription is an optional feature, if you want to use it you'll need an OpenAI API Key. You'll be billed by OpenAI for your API usage.
+  - If you have this feature disabled (no OPENAI_API_KEY configured on the .env file) and you send an audio to your nomi, you'll receive this message back:
+    > Hey! I can't listen to audios right now. Could you send me a text instead? Thanks!
 
 ## Prerequisites
 
@@ -47,49 +51,73 @@ Before you begin, make sure you have the following:
 
 4. (Optional) If you want to enable voice message transcription, obtain an OpenAI API key from [OpenAI](https://openai.com).
 
+5. Configure the environment variables.
+   1. On the same folder where you extracted the app, create a file named `.env`:
+        ```dotenv
+        NOMI_API_KEY="your-nomi-api-key"
+        NOMI_ID="your-nomi-id"
+        NOMI_NAME="Jane Doe"
+        ```
+   2. Optionally, add an OpenAI API Key to use the audio transcription feature:
+        ```dotenv
+        NOMI_API_KEY="your-nomi-api-key"
+        NOMI_ID="your-nomi-id"
+        NOMI_NAME="Jane Doe"
+        OPENAI_API_KEY="your-openai-api-key"
+        ```
+
 ## Usage
 
 ### Step 1: Launch the App
 
-Double-click the executable file to launch the app. This will open a terminal window.
+You can try just double-clicking the app, if it opens a terminal window it worked, skip to Step 2. Tested only on windows.  
+To run the binary executable on your system, follow these instructions: 
+
+#### 1. **Navigate to the Directory**
+Open your terminal or command prompt and navigate to the directory where the binary is located:  
+
+**Windows:**
+   ```batch
+   cd C:\path\to\your\binary
+   ```
+
+**Linux/macOS:**
+   ```bash
+   cd /path/to/your/binary
+   ```
+
+#### 2. **Make the Binary Executable (Linux/macOS only)**
+On Linux and macOS, you may need to ensure the binary has executable permissions. Run the following command if necessary:
+
+   ```bash
+   chmod +x binary_name
+   ```
+
+#### 3. **Run the Binary**
+Now you can run the binary:
+
+**Windows:**
+   ```batch
+   nomi-whatsapp-windows-amd64.exe
+   ```
+
+**Linux/macOS:**
+   ```bash
+   ./nomi-whatsapp-<your-platform>
+   ```
 
 ### Step 2: Connect Your WhatsApp Account
 
 If this is your first time running the app, you will be prompted to scan a QR code with your WhatsApp account. This QR code links your Nomi to the WhatsApp account.
 
-Once connected, you will see "whatsmeow" as a connected device in WhatsApp's "Linked Devices" tab, indicating that the connection is active.
-
-### Step 3: Enter Nomi API Credentials
-
-When prompted, provide your **Nomi API Key** and **Nomi ID** to link the app to your Nomi bot.
-
-### Step 4: (Optional) Configure OpenAI for Voice Messages
-
-If you want to enable voice message transcription:
-
-1. Enter your **OpenAI API Key** when prompted.
-2. When voice messages are sent to your WhatsApp account, the app will use OpenAI Whisper to transcribe the audio and send the transcribed text to your Nomi.
+Once connected, you will see a new linked device in WhatsApp's "Linked Devices" tab, indicating that the connection is active.
 
 ### Step 5: Start Using Your Nomi via WhatsApp
 
-Once set up, your Nomi chatbot will start responding to WhatsApp messages sent to the connected WhatsApp account. If voice transcription is enabled, audio messages will be transcribed and forwarded to your Nomi as text.
+Once set up, your Nomi will start responding to WhatsApp messages sent to the connected WhatsApp account. If voice transcription is enabled, audio messages will be transcribed and forwarded to your Nomi as text.
 
-## Configuration
+---
 
-- **Nomi API Key**: Required for basic functionality. It allows the app to communicate with your Nomi chatbot.
-- **OpenAI API Key (Optional)**: Allows for the transcription of audio messages using OpenAI Whisper.
-
-## License
-
-This project is licensed under the MIT License. See the `LICENSE` file for more details.
-
-## Contributing
-
-Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
-
-## Troubleshooting
-
-- **QR Code not displaying?** Ensure you're using a valid WhatsApp account and the network is stable.
-- **Issues with voice messages?** Make sure your OpenAI API key is correct, and you have enough API quota to process audio transcriptions.
-
-Feel free to open an issue for further assistance!
+Built with:
+- https://github.com/vhalmd/nomi-go-sdk
+- [go.mau.fi/whatsmeow](https://github.com/tulir/whatsmeow)

@@ -39,7 +39,7 @@ func setup() API {
 	nomiApiKey := os.Getenv("NOMI_API_KEY")
 	nomiID := os.Getenv("NOMI_ID")
 	nomiName := os.Getenv("NOMI_NAME")
-	openAIToken := os.Getenv("OPENAI_TOKEN")
+	openAIToken := os.Getenv("OPENAI_API_KEY")
 
 	nomiClient := nomi.NewClient(nomiApiKey)
 
