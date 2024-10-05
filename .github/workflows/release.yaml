@@ -58,8 +58,8 @@ jobs:
           body_path: ".github/RELEASE-TEMPLATE.md"
           draft: true
           files: |
-            dist/nomi-whatsapp-windows.exe
-            dist/nomi-whatsapp-linux-amd64
-            dist/nomi-whatsapp-linux-arm64
+            nomi-whatsapp-windows.exe
+            nomi-whatsapp-linux-amd64
+            nomi-whatsapp-linux-arm64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
