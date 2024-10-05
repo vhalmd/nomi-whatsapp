@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/mdp/qrterminal/v3"
 	"github.com/sashabaranov/go-openai"
@@ -93,10 +94,13 @@ func (a API) EventHandler(evt interface{}) {
 			content = received
 		}
 		am := v.Message.GetAudioMessage()
-		if content != "" {
-			_ = a.Whatsapp.MarkRead([]types.MessageID{v.Info.ID}, time.Now(), v.Info.Chat, v.Info.Sender)
 
-			_ = a.Whatsapp.SendChatPresence(v.Info.Chat, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+		senderNumber, _ := types.ParseJID(v.Info.SourceString())
+		slog.Info("Message received", "text_content", content, "audio?", am != nil, "sender", senderNumber)
+
+		_ = a.Whatsapp.MarkRead([]types.MessageID{v.Info.ID}, time.Now(), v.Info.Chat, v.Info.Sender)
+		_ = a.Whatsapp.SendChatPresence(v.Info.Chat, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+		if content != "" {
 			nomiReply, err := a.NomiClient.SendMessage(a.NomiID, nomi.SendMessageBody{MessageText: content})
 			if err != nil {
 				slog.Error("Error sending message to nomi", "error", err)
@@ -108,30 +112,34 @@ func (a API) EventHandler(evt interface{}) {
 			if err != nil {
 				slog.Error("Error sending nomi reply to whatsapp", "nomi_reply", nomiReply.ReplyMessage.Text, "jid", v.Info.Chat, "error", err)
 			}
-		}
-
-		if am != nil {
+		} else if am != nil {
 			a.SendVoice(am, v.Info.Chat)
 		}
 	}
 }
 
+func (a API) SendErrorMessageAudio(targetJID types.JID) {
+	msg := "Hey! I can't listen to audios right now. Could you send me a text instead? Thanks!"
+	_, _ = a.Whatsapp.SendMessage(context.Background(), targetJID, &waE2E.Message{Conversation: &msg})
+}
+
 func (a API) SendVoice(msg *waE2E.AudioMessage, targetJID types.JID) {
 
 	if a.OpenAI == nil {
-		msg := "Hey! I can't listen to audios right now. Could you send me a text instead? Thanks!"
-		_, _ = a.Whatsapp.SendMessage(context.Background(), targetJID, &waE2E.Message{Conversation: &msg})
+		a.SendErrorMessageAudio(targetJID)
 		return
 	}
 
 	f, err := os.OpenFile("audio.mp3", os.O_RDWR|os.O_CREATE, 0664)
 	if err != nil {
-		panic(err)
+		a.SendErrorMessageAudio(targetJID)
+		return
 	}
 
 	err = a.Whatsapp.DownloadToFile(msg, f)
 	if err != nil {
-		panic(err)
+		a.SendErrorMessageAudio(targetJID)
+		return
 	}
 
 	req := openai.AudioRequest{
@@ -141,14 +149,28 @@ func (a API) SendVoice(msg *waE2E.AudioMessage, targetJID types.JID) {
 	resp, err := a.OpenAI.CreateTranscription(context.Background(), req)
 	if err != nil {
 		slog.Error("Transcription error", "error", err)
+		a.SendErrorMessageAudio(targetJID)
+		return
 	}
 
 	nomiReply, err := a.NomiClient.SendMessage(a.NomiID, nomi.SendMessageBody{MessageText: resp.Text})
 	if err != nil {
-		slog.Error("Error sending nomi reply to whatsapp", "nomi_reply", nomiReply.ReplyMessage.Text, "jid", targetJID, "error", err)
+		if errors.Is(err, nomi.MessageLengthLimitExceeded) {
+			msg := "Hey! The audio is a bit long. Could you send a shorter one? Thanks!"
+			_, _ = a.Whatsapp.SendMessage(context.Background(), targetJID, &waE2E.Message{Conversation: &msg})
+			return
+		}
+		slog.Error("Error sending nomi reply to Nomi API", "error", err)
+		a.SendErrorMessageAudio(targetJID)
+		return
 	}
 
-	_, _ = a.Whatsapp.SendMessage(context.Background(), targetJID, &waE2E.Message{Conversation: &nomiReply.ReplyMessage.Text})
+	_, err = a.Whatsapp.SendMessage(context.Background(), targetJID, &waE2E.Message{Conversation: &nomiReply.ReplyMessage.Text})
+	if err != nil {
+		slog.Error("Error sending nomi reply to whatsapp", "nomi_reply", nomiReply.ReplyMessage.Text, "jid", targetJID, "error", err)
+		a.SendErrorMessageAudio(targetJID)
+		return
+	}
 }
 
 func main() {
