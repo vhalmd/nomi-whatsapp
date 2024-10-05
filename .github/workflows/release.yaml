@@ -35,19 +35,19 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: 'nomi-whatsapp-windows.exe'
-          path: 'dist/nomi-whatsapp-windows.exe'
+          path: 'nomi-whatsapp-windows.exe'
 
       - name: Upload linux-amd64 binary
         uses: actions/upload-artifact@v4
         with:
           name: 'nomi-whatsapp-linux-amd64'
-          path: 'dist/nomi-whatsapp-linux-amd64'
+          path: 'nomi-whatsapp-linux-amd64'
 
       - name: Upload linux-arm64 binary
         uses: actions/upload-artifact@v4
         with:
           name: 'nomi-whatsapp-linux-arm64'
-          path: 'dist/nomi-whatsapp-linux-arm64'
+          path: 'nomi-whatsapp-linux-arm64'
 
       - name: Release Notes
         run:
