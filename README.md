@@ -47,7 +47,7 @@ Before you begin, make sure you have the following:
 
 ## Installation
 
-1. Download the latest version of the app from the [releases](https://github.com/vhalmd/nomi-telegram/releases/latest).
+1. Download the latest version of the app from the [releases](https://github.com/vhalmd/nomi-whatsapp/releases/latest).
 
 2. Extract the downloaded files to a directory of your choice.
 
