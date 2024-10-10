@@ -4,3 +4,4 @@
 *.db-journal
 .idea/*
 bin/*
+/*.js

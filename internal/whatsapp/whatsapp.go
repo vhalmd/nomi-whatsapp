@@ -1,10 +1,9 @@
-package main
+package whatsapp
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/mdp/qrterminal/v3"
 	"github.com/sashabaranov/go-openai"
 	"github.com/vhalmd/nomi-go-sdk"
 	"go.mau.fi/whatsmeow"
@@ -17,39 +16,38 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"log/slog"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
-	_ "github.com/joho/godotenv/autoload"
 	_ "modernc.org/sqlite"
 )
 
-type API struct {
+type Client struct {
 	NomiClient nomi.API
 	Whatsapp   *whatsmeow.Client
 	OpenAI     *openai.Client
+	QRCode     string
 
-	NomiID      string
-	NomiAPIKey  string
-	OpenAIToken string
+	Logger waLog.Logger
+	Config Config
 }
 
-func setup() API {
-	nomiApiKey := os.Getenv("NOMI_API_KEY")
-	nomiID := os.Getenv("NOMI_ID")
-	nomiName := os.Getenv("NOMI_NAME")
-	openAIToken := os.Getenv("OPENAI_API_KEY")
+type Config struct {
+	NomiAPIKey string
+	NomiID     string
+	NomiName   string
+	OpenAIKey  string
+}
 
-	nomiClient := nomi.NewClient(nomiApiKey)
+func NewClient(cfg Config, logger waLog.Logger) Client {
+	nomiClient := nomi.NewClient(cfg.NomiAPIKey)
 
-	dbLog := waLog.Stdout("Database", "INFO", true)
+	dbLog := waLog.Noop
 	container, err := sqlstore.New("sqlite", "file:store.db?_pragma=foreign_keys(1)", dbLog)
 	if err != nil {
 		panic(err)
 	}
 
-	osName := "[NOMI] " + nomiName
+	osName := "[NOMI] " + cfg.NomiName
 	store.DeviceProps.Os = &osName
 
 	platformType := waCompanionReg.DeviceProps_IE
@@ -60,30 +58,23 @@ func setup() API {
 		panic(err)
 	}
 
-	clientLog := waLog.Stdout("Client", "INFO", true)
-	if err != nil {
-		panic(err)
-	}
-
-	whatsapp := whatsmeow.NewClient(deviceStore, clientLog)
+	whatsapp := whatsmeow.NewClient(deviceStore, logger)
 
 	var openaiClient *openai.Client
-	if openAIToken != "" {
-		openaiClient = openai.NewClient(openAIToken)
+	if cfg.OpenAIKey != "" {
+		openaiClient = openai.NewClient(cfg.OpenAIKey)
 	}
 
-	return API{
+	return Client{
 		NomiClient: nomiClient,
 		Whatsapp:   whatsapp,
 		OpenAI:     openaiClient,
-
-		NomiAPIKey:  nomiApiKey,
-		NomiID:      nomiID,
-		OpenAIToken: openAIToken,
+		Logger:     logger,
+		Config:     cfg,
 	}
 }
 
-func (a API) EventHandler(evt interface{}) {
+func (a *Client) EventHandler(evt interface{}) {
 	switch v := evt.(type) {
 	case *events.Message:
 		content := ""
@@ -96,34 +87,64 @@ func (a API) EventHandler(evt interface{}) {
 		am := v.Message.GetAudioMessage()
 
 		senderNumber, _ := types.ParseJID(v.Info.SourceString())
-		slog.Info("Message received", "text_content", content, "audio?", am != nil, "sender", senderNumber)
+		a.Logger.Infof("[MESSAGE RECEIVED] CONTENT='%s' AUDIO='%t' SENDER='%s'", content, am != nil, senderNumber.String())
 
 		_ = a.Whatsapp.MarkRead([]types.MessageID{v.Info.ID}, time.Now(), v.Info.Chat, v.Info.Sender)
 		_ = a.Whatsapp.SendChatPresence(v.Info.Chat, types.ChatPresenceComposing, types.ChatPresenceMediaText)
 		if content != "" {
-			nomiReply, err := a.NomiClient.SendMessage(a.NomiID, nomi.SendMessageBody{MessageText: content})
+			nomiReply, err := a.NomiClient.SendMessage(a.Config.NomiID, nomi.SendMessageBody{MessageText: content})
 			if err != nil {
-				slog.Error("Error sending message to nomi", "error", err)
+				a.Logger.Errorf("Error sending message to nomi: %s", err)
 			}
 
 			_, err = a.Whatsapp.SendMessage(context.Background(), v.Info.Chat, &waE2E.Message{
 				Conversation: &nomiReply.ReplyMessage.Text,
 			})
 			if err != nil {
-				slog.Error("Error sending nomi reply to whatsapp", "nomi_reply", nomiReply.ReplyMessage.Text, "jid", v.Info.Chat, "error", err)
+				a.Logger.Errorf("Error sending nomi reply to whatsapp. NOMI_REPLY='%s' JID='%s' ERROR=%s", nomiReply.ReplyMessage.Text, v.Info.Chat, err)
 			}
 		} else if am != nil {
 			a.SendVoice(am, v.Info.Chat)
 		}
+	case *events.LoggedOut:
+		fmt.Println("[LOGGED OUT]", a.Whatsapp.Store.ID)
+		err := a.Whatsapp.Store.Delete()
+		if err != nil {
+			panic(err)
+		}
+		//a.Whatsapp.Store.DeleteAllSessions()
 	}
 }
 
-func (a API) SendErrorMessageAudio(targetJID types.JID) {
+func (a *Client) ListenQR() {
+	if a.Whatsapp.Store.ID == nil {
+		qrChan, _ := a.Whatsapp.GetQRChannel(context.Background())
+		err := a.Whatsapp.Connect()
+		if err != nil {
+			slog.Warn("Websocket already connected. Trying to get new QR Code.")
+		}
+
+		for evt := range qrChan {
+			if evt.Event == "code" {
+				a.QRCode = evt.Code
+			} else {
+				a.QRCode = ""
+			}
+		}
+	} else {
+		err := a.Whatsapp.Connect()
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func (a *Client) SendErrorMessageAudio(targetJID types.JID) {
 	msg := "Hey! I can't listen to audios right now. Could you send me a text instead? Thanks!"
 	_, _ = a.Whatsapp.SendMessage(context.Background(), targetJID, &waE2E.Message{Conversation: &msg})
 }
 
-func (a API) SendVoice(msg *waE2E.AudioMessage, targetJID types.JID) {
+func (a *Client) SendVoice(msg *waE2E.AudioMessage, targetJID types.JID) {
 
 	if a.OpenAI == nil {
 		a.SendErrorMessageAudio(targetJID)
@@ -148,61 +169,27 @@ func (a API) SendVoice(msg *waE2E.AudioMessage, targetJID types.JID) {
 	}
 	resp, err := a.OpenAI.CreateTranscription(context.Background(), req)
 	if err != nil {
-		slog.Error("Transcription error", "error", err)
+		a.Logger.Errorf("Transcription error: %s", err)
 		a.SendErrorMessageAudio(targetJID)
 		return
 	}
 
-	nomiReply, err := a.NomiClient.SendMessage(a.NomiID, nomi.SendMessageBody{MessageText: resp.Text})
+	nomiReply, err := a.NomiClient.SendMessage(a.Config.NomiID, nomi.SendMessageBody{MessageText: resp.Text})
 	if err != nil {
 		if errors.Is(err, nomi.MessageLengthLimitExceeded) {
 			msg := "Hey! The audio is a bit long. Could you send a shorter one? Thanks!"
 			_, _ = a.Whatsapp.SendMessage(context.Background(), targetJID, &waE2E.Message{Conversation: &msg})
 			return
 		}
-		slog.Error("Error sending nomi reply to Nomi API", "error", err)
+		a.Logger.Errorf("Error sending nomi reply to Nomi API: %s", err)
 		a.SendErrorMessageAudio(targetJID)
 		return
 	}
 
 	_, err = a.Whatsapp.SendMessage(context.Background(), targetJID, &waE2E.Message{Conversation: &nomiReply.ReplyMessage.Text})
 	if err != nil {
-		slog.Error("Error sending nomi reply to whatsapp", "nomi_reply", nomiReply.ReplyMessage.Text, "jid", targetJID, "error", err)
+		a.Logger.Errorf("Error sending nomi reply to whatsapp. NOMI_REPLY='%s' JID='%s' ERROR=%s", nomiReply.ReplyMessage.Text, targetJID, err)
 		a.SendErrorMessageAudio(targetJID)
 		return
 	}
-}
-
-func main() {
-	api := setup()
-	api.Whatsapp.AddEventHandler(api.EventHandler)
-
-	if api.Whatsapp.Store.ID == nil {
-		// No ID stored, new login
-		qrChan, _ := api.Whatsapp.GetQRChannel(context.Background())
-		err := api.Whatsapp.Connect()
-		if err != nil {
-			panic(err)
-		}
-
-		for evt := range qrChan {
-			if evt.Event == "code" {
-				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
-			} else {
-				fmt.Println("Login event:", evt.Event)
-			}
-		}
-	} else {
-		// Already logged in, just connect
-		err := api.Whatsapp.Connect()
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	<-c
-
-	api.Whatsapp.Disconnect()
 }

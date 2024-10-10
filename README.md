@@ -8,6 +8,10 @@ This project allows you to connect your Nomi to WhatsApp. By utilizing the Nomi 
 
 ## Known issues
 
+- Nomi will respond to **ANY** message the connected account receives, no matter who is the sender.
+  - TODO: Implement config to limit the numbers that should receive a response
+
+
 - After scanning the QR code, you may occasionally see a "successfully authenticated" message followed by multiple errors. These errors, particularly when sending a message to the newly connected account, may include "untrusted identity" warnings. This issue usually resolves after restarting the app once you're logged in.
   - These errors occur when your message couldn't be decrypted. The system will automatically retry until the message is successfully decrypted and your nomi's reply is delivered to WhatsApp. No manual action is required.
   - In some cases, you might not receive a response. This can usually be fixed by stopping and restarting the app.
